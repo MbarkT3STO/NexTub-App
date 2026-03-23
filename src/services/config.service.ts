@@ -50,6 +50,10 @@ export class ConfigService {
   }
 
   addHistory(item: DownloadHistoryItem): void {
+    // Remove any existing entry for the same video + type so only the latest is kept
+    this.config.history = this.config.history.filter(
+      h => !(h.title === item.title && h.type === item.type)
+    );
     this.config.history.unshift(item);
     if (this.config.history.length > MAX_HISTORY) {
       this.config.history = this.config.history.slice(0, MAX_HISTORY);
