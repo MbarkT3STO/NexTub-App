@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; script-src 'self'" />
+  <title>NexTub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="styles/main.css" />
+  <style>
+    /* Inline critical: prevent flash of unstyled content */
+    html { background: #eef2f7; }
+    html[data-theme="dark"] { background: #111113; }
+  </style>
+</head>
+<body>
+
+  <!-- TITLEBAR -->
+  <header class="titlebar">
+    <div class="titlebar__left">
+      <div class="logo">
+        <div class="logo__icon"><i class="fa-brands fa-youtube"></i></div>
+        <div class="logo__text">
+          <span class="logo__name">NexTub</span>
+          <span class="logo__tag">Downloader</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="titlebar__center">
+      <nav class="tab-nav" role="tablist">
+        <button class="tab-btn tab-btn--active" role="tab" aria-selected="true" data-tab="downloader">
+          <i class="fa-solid fa-download"></i><span>Download</span>
+        </button>
+        <button class="tab-btn" role="tab" aria-selected="false" data-tab="history">
+          <i class="fa-solid fa-clock-rotate-left"></i><span>History</span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="titlebar__right">
+      <button class="icon-btn" id="openDirBtn" title="Open downloads folder">
+        <i class="fa-solid fa-folder-open"></i>
+      </button>
+      <button class="icon-btn" id="themeToggle" title="Toggle theme">
+        <i class="fa-solid fa-sun icon-sun"></i>
+        <i class="fa-solid fa-moon icon-moon"></i>
+      </button>
+      <div class="wc-group">
+        <button class="wc-btn wc-btn--min" id="btnMinimize"><i class="fa-solid fa-minus"></i></button>
+        <button class="wc-btn wc-btn--close" id="btnClose"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main class="main-content">
+
+    <!-- DOWNLOADER TAB -->
+    <section id="tab-downloader" class="tab-panel tab-panel--active" role="tabpanel">
+
+      <!-- URL CARD -->
+      <div class="card">
+        <div class="card__head">
+          <div class="card__head-icon"><i class="fa-brands fa-youtube"></i></div>
+          <div>
+            <div class="card__title">Paste Video URL</div>
+            <div class="card__sub">Supports youtube.com and youtu.be links</div>
+          </div>
+        </div>
+
+        <div class="url-row">
+          <div class="input-wrap" id="urlInputWrapper">
+            <i class="fa-solid fa-link input-icon"></i>
+            <input id="urlInput" class="url-input" type="url"
+              placeholder="https://www.youtube.com/watch?v=..."
+              autocomplete="off" spellcheck="false" />
+            <button class="clear-btn" id="clearUrlBtn" hidden>
+              <i class="fa-solid fa-circle-xmark"></i>
+            </button>
+          </div>
+          <button class="btn btn--accent" id="fetchBtn">
+            <i class="fa-solid fa-magnifying-glass"></i><span>Fetch</span>
+          </button>
+        </div>
+
+        <p class="error-text" id="urlError" role="alert" aria-live="polite"></p>
+      </div>
+
+      <!-- PREVIEW CARD — hidden until fetch -->
+      <div class="card card--preview" id="previewCard" hidden>
+        <div class="preview-hero">
+          <div class="thumb-wrap">
+            <img id="thumbnail" class="thumb" src="" alt="Video thumbnail" />
+            <div class="thumb-overlay"><i class="fa-solid fa-play"></i></div>
+            <span class="duration-badge" id="durationBadge">0:00</span>
+          </div>
+          <div class="video-meta">
+            <span class="platform-badge"><i class="fa-brands fa-youtube"></i> YouTube</span>
+            <h2 class="video-title" id="videoTitle">Video Title</h2>
+            <p class="video-author" id="videoAuthor">
+              <i class="fa-solid fa-circle-user"></i><span></span>
+            </p>
+            <div class="save-loc">
+              <i class="fa-solid fa-folder"></i>
+              <span class="save-loc__path" id="downloadDirText">~/Downloads</span>
+              <button class="link-btn" id="changeDirBtn">
+                <i class="fa-solid fa-pen-to-square"></i> Change
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="options-row">
+          <div class="opt-group">
+            <label class="opt-label" for="qualitySelect">
+              <i class="fa-solid fa-sliders"></i> Quality
+            </label>
+            <div class="select-wrap">
+              <select id="qualitySelect" class="quality-select">
+                <option value="best">⭐ Best available</option>
+                <option value="1080p">🎬 1080p Full HD</option>
+                <option value="720p" selected>📺 720p HD</option>
+                <option value="480p">📱 480p SD</option>
+                <option value="360p">💾 360p Low</option>
+              </select>
+              <i class="fa-solid fa-chevron-down select-arrow"></i>
+            </div>
+          </div>
+          <div class="opt-group opt-group--grow">
+            <label class="opt-label"><i class="fa-solid fa-file"></i> Output file</label>
+            <div class="filename-box">
+              <i class="fa-solid fa-file-video" id="filenameIcon"></i>
+              <span id="filenameText" class="filename-text">filename.mp4</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ACTION ROW — hidden until fetch succeeds -->
+        <div class="action-row" id="actionRow" hidden>
+          <button class="btn btn--video" id="downloadVideoBtn">
+            <span class="btn__icon"><i class="fa-solid fa-film"></i></span>
+            <span class="btn__body">
+              <span class="btn__label">Download MP4</span>
+              <span class="btn__sub">Video + Audio</span>
+            </span>
+          </button>
+          <button class="btn btn--audio" id="downloadAudioBtn">
+            <span class="btn__icon"><i class="fa-solid fa-music"></i></span>
+            <span class="btn__body">
+              <span class="btn__label">Convert MP3</span>
+              <span class="btn__sub">320kbps Audio</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- HISTORY TAB -->
+    <section id="tab-history" class="tab-panel" role="tabpanel" hidden>
+      <div class="history-header">
+        <div class="history-header__left">
+          <h2 class="section-title"><i class="fa-solid fa-clock-rotate-left"></i> Download History</h2>
+          <span class="count-badge" id="historyCount">0 items</span>
+        </div>
+        <button class="btn btn--ghost btn--sm" id="clearHistoryBtn">
+          <i class="fa-solid fa-trash-can"></i> Clear All
+        </button>
+      </div>
+      <div class="history-list" id="historyList" role="list">
+        <div class="empty-state" id="historyEmpty">
+          <div class="empty-icon"><i class="fa-solid fa-box-open"></i></div>
+          <p class="empty-title">No downloads yet</p>
+          <p class="empty-sub">Your download history will appear here</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- DOWNLOAD MODAL -->
+  <div class="modal-overlay" id="dlModalOverlay" aria-modal="true" role="dialog" aria-labelledby="dlModalTitle">
+    <div class="modal" id="dlModal">
+
+      <!-- Header -->
+      <div class="modal__head">
+        <div class="modal__head-icon" id="dlModalIcon">
+          <i class="fa-solid fa-arrow-down-to-bracket"></i>
+        </div>
+        <div class="modal__head-text">
+          <span class="modal__title" id="dlModalTitle">Downloading…</span>
+          <span class="modal__sub" id="dlModalSub">Preparing your file</span>
+        </div>
+        <button class="modal__close" id="dlModalClose" aria-label="Close">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="modal__divider"></div>
+
+      <!-- Progress view -->
+      <div class="modal__body" id="dlProgressView">
+        <div class="dl-percent-row">
+          <span class="dl-percent" id="progressPercent">0%</span>
+          <div class="dl-stats">
+            <span id="progressBytes" class="dl-stat">—</span>
+            <span class="dl-stat-sep">·</span>
+            <span id="progressSpeed" class="dl-stat">—</span>
+          </div>
+        </div>
+        <div class="dl-track-wrap">
+          <div class="dl-track" id="progressTrack" role="progressbar"
+            aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+            <div class="dl-fill" id="progressFill">
+              <div class="dl-fill__glow"></div>
+            </div>
+          </div>
+        </div>
+        <div class="dl-status-row">
+          <span class="dl-status" id="progressStatus">Starting…</span>
+          <button class="btn btn--cancel-sm" id="cancelBtn">
+            <i class="fa-solid fa-stop"></i> Cancel
+          </button>
+        </div>
+      </div>
+
+      <!-- Result view (hidden by default via CSS class, not hidden attr) -->
+      <div class="modal__body modal__body--result" id="dlResultView">
+        <div class="result-icon-wrap">
+          <i class="fa-solid fa-circle-check result-icon result-icon--success" id="resultIconSuccess"></i>
+          <i class="fa-solid fa-circle-exclamation result-icon result-icon--error" id="resultIconError"></i>
+        </div>
+        <p class="result-msg" id="resultMessage">Download complete!</p>
+        <p class="result-path" id="resultPath"></p>
+        <div class="result-actions" id="resultActions">
+          <button class="btn btn--ghost btn--sm" id="openFileBtn">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Open File
+          </button>
+          <button class="btn btn--ghost btn--sm" id="openFolderBtn">
+            <i class="fa-solid fa-folder-open"></i> Show in Folder
+          </button>
+        </div>
+        <button class="btn btn--accent btn--full" id="newDownloadBtn">
+          <i class="fa-solid fa-plus"></i> New Download
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <i class="toast__icon fa-solid fa-circle-check"></i>
+    <span class="toast__msg"></span>
+  </div>
+
+  <!-- DRAG OVERLAY -->
+  <div class="drag-overlay" id="dragOverlay">
+    <div class="drag-box">
+      <i class="fa-solid fa-link drag-box__icon"></i>
+      <p class="drag-box__text">Drop YouTube URL to fetch</p>
+    </div>
+  </div>
+
+  <script type="module" src="../../dist/renderer/app.js"></script>
+</body>
+</html>

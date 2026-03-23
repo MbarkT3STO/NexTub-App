@@ -1,0 +1,71 @@
+{
+  "name": "nextub",
+  "version": "1.0.0",
+  "description": "A modern YouTube downloader and converter desktop app",
+  "main": "dist/main/main/index.js",
+  "scripts": {
+    "dev": "concurrently \"tsc -w -p tsconfig.main.json\" \"tsc -w -p tsconfig.renderer.json\"",
+    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
+  },
+  "keywords": [
+    "youtube",
+    "downloader",
+    "electron",
+    "mp3",
+    "mp4"
+  ],
+  "author": "NexTub",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "concurrently": "^8.2.0",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.0.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "yt-dlp-wrap": "^2.3.12"
+  },
+  "build": {
+    "appId": "com.nextub.app",
+    "productName": "NexTub",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "src/renderer/**/*.html",
+      "src/renderer/**/*.css",
+      "src/assets/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static",
+        "to": "ffmpeg-static",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "src/assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "src/assets/icon.png"
+    }
+  }
+}

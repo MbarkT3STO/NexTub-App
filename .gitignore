@@ -1,0 +1,52 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Build output ──────────────────────────────────────────────────────────────
+dist/
+release/
+
+# ── yt-dlp binary cache ───────────────────────────────────────────────────────
+*.exe
+yt-dlp
+yt-dlp.exe
+
+# ── Electron builder artifacts ────────────────────────────────────────────────
+*.dmg
+*.AppImage
+*.snap
+*.deb
+*.rpm
+*.nsis
+*.msi
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── App data / config ─────────────────────────────────────────────────────────
+# NexTub stores config in OS app data, not in repo
+*.json.bak
+
+# ── OS artifacts ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor ────────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.suo
+*.user
+
+# ── TypeScript ────────────────────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+.env
+.env.*
+*.tmp
+*.temp
