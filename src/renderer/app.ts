@@ -23,6 +23,7 @@ declare global {
       clearHistory(): Promise<void>;
       openFile(path: string): Promise<void>;
       openFolder(path: string): Promise<void>;
+      checkFileExists(path: string): Promise<boolean>;
       minimizeWindow(): void;
       closeWindow(): void;
       checkYtDlp(): Promise<{ ready: boolean; error?: string }>;
@@ -428,38 +429,55 @@ async function loadHistory(): Promise<void> {
     return;
   }
   historyEmpty.setAttribute('hidden', '');
-  history.forEach(item => historyList.appendChild(buildHistoryItem(item)));
+
+  // Check file existence for all items in parallel, then render
+  const existsResults = await Promise.all(
+    history.map(item => window.electronAPI.checkFileExists(item.filePath))
+  );
+  history.forEach((item, i) => {
+    historyList.appendChild(buildHistoryItem(item, existsResults[i]!));
+  });
 }
 
-function buildHistoryItem(item: DownloadHistoryItem): HTMLElement {
+function buildHistoryItem(item: DownloadHistoryItem, fileExists: boolean): HTMLElement {
   const div = document.createElement('div');
-  div.className = 'history-item';
+  div.className = 'history-item' + (fileExists ? '' : ' history-item--missing');
   div.setAttribute('role', 'listitem');
   const date = new Date(item.downloadedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const actionsHtml = fileExists
+    ? `<div class="history-actions">
+        <button class="history-action-btn" title="Open file" data-action="open-file" data-path="${escapeHtml(item.filePath)}">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i>
+        </button>
+        <button class="history-action-btn" title="Show in folder" data-action="open-folder" data-path="${escapeHtml(item.filePath)}">
+          <i class="fa-solid fa-folder-open"></i>
+        </button>
+      </div>`
+    : `<div class="history-missing-badge">
+        <i class="fa-solid fa-triangle-exclamation"></i><span>Not found</span>
+      </div>`;
+
   div.innerHTML = `
-    <img class="history-thumb" src="${escapeHtml(item.thumbnail)}" alt="" loading="lazy" />
+    <img class="history-thumb${fileExists ? '' : ' history-thumb--missing'}" src="${escapeHtml(item.thumbnail)}" alt="" loading="lazy" />
     <div class="history-info">
       <div class="history-title">${escapeHtml(item.title)}</div>
       <div class="history-meta">${formatDuration(item.duration)} · ${date}</div>
     </div>
     <span class="history-badge history-badge--${item.type}">${item.type.toUpperCase()}</span>
-    <div class="history-actions">
-      <button class="history-action-btn" title="Open file" data-action="open-file" data-path="${escapeHtml(item.filePath)}">
-        <i class="fa-solid fa-arrow-up-right-from-square"></i>
-      </button>
-      <button class="history-action-btn" title="Show in folder" data-action="open-folder" data-path="${escapeHtml(item.filePath)}">
-        <i class="fa-solid fa-folder-open"></i>
-      </button>
-    </div>
+    ${actionsHtml}
   `;
-  div.querySelectorAll<HTMLButtonElement>('[data-action]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const p = btn.dataset.path || '';
-      if (btn.dataset.action === 'open-file') window.electronAPI.openFile(p);
-      else window.electronAPI.openFolder(p);
+
+  if (fileExists) {
+    div.querySelectorAll<HTMLButtonElement>('[data-action]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const p = btn.dataset.path || '';
+        if (btn.dataset.action === 'open-file') window.electronAPI.openFile(p);
+        else window.electronAPI.openFolder(p);
+      });
     });
-  });
+  }
   return div;
 }
 

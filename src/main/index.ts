@@ -141,6 +141,12 @@ ipcMain.handle('ytdlp-status', async () => {
   }
 });
 
+// File existence check
+ipcMain.handle('check-file-exists', (_event, filePath: string) => {
+  const fs = require('fs');
+  return fs.existsSync(filePath);
+});
+
 // Open file / folder in OS
 ipcMain.handle(IPC_CHANNELS.OPEN_FILE, (_event, filePath: string) => {
   shell.openPath(filePath);

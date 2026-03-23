@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_CHANNELS.OPEN_FILE, filePath),
   openFolder: (filePath: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.OPEN_FOLDER, filePath),
+  checkFileExists: (filePath: string) =>
+    ipcRenderer.invoke('check-file-exists', filePath),
 
   // yt-dlp status
   checkYtDlp: () => ipcRenderer.invoke('ytdlp-status'),
