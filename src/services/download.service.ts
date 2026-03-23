@@ -55,8 +55,8 @@ export class DownloadService {
       if (!win.isDestroyed()) win.webContents.send(channel, data);
     };
     const sendStatus = (s: string) => send(IPC_CHANNELS.DOWNLOAD_STATUS, s);
-    const sendProgress = (percent: number, speed = 0, downloaded = 0, total = 0) =>
-      send(IPC_CHANNELS.DOWNLOAD_PROGRESS, { percent, speed, downloaded, total });
+    const sendProgress = (percent: number, speed = 0, downloaded = 0, total = 0, eta = 0) =>
+      send(IPC_CHANNELS.DOWNLOAD_PROGRESS, { percent, speed, downloaded, total, eta });
 
     const ffmpegPath = ffmpegStatic ?? 'ffmpeg';
 
@@ -77,23 +77,39 @@ export class DownloadService {
       /** Run a yt-dlp command, track the process, reject on cancel or error */
       const runYtDlp = (
         args: string[],
-        onProgress: (pct: number, speed: string) => void
+        onProgress: (pct: number, speed: number, downloaded: number, total: number, eta: number) => void
       ): Promise<void> =>
         new Promise((resolve, reject) => {
           if (this.cancelled) return reject(new Error('cancelled'));
 
           const proc = ytdlp.exec(args, {});
-          // yt-dlp-wrap returns an EventEmitter wrapping the child process
-          // Access the underlying ChildProcess to be able to kill it
           const child = (proc as unknown as { ytDlpProcess?: ChildProcess }).ytDlpProcess
             ?? (proc as unknown as ChildProcess);
           this.registerProc(child as ChildProcess);
 
           proc.on('ytDlpEvent', (_: string, data: string) => {
             if (this.cancelled) { (child as ChildProcess).kill?.('SIGKILL'); return; }
-            const pct = data.match(/(\d+\.?\d*)%/);
-            const spd = data.match(/at\s+([\d.]+\w+\/s)/);
-            if (pct) onProgress(parseFloat(pct[1]!), spd?.[1] ?? '');
+            const pct  = data.match(/(\d+\.?\d*)%/);
+            // speed: e.g. "1.23MiB/s" or "456.78KiB/s"
+            const spdM = data.match(/at\s+([\d.]+)(MiB|KiB|GiB)\/s/);
+            // downloaded/total: e.g. "12.34MiB of 56.78MiB"
+            const dlM  = data.match(/([\d.]+)(MiB|KiB|GiB)\s+of\s+([\d.]+)(MiB|KiB|GiB)/);
+            // ETA: e.g. "ETA 00:34"
+            const etaM = data.match(/ETA\s+(\d+):(\d+)/);
+
+            if (pct) {
+              const toBytes = (v: string, u: string) => {
+                const n = parseFloat(v);
+                if (u === 'GiB') return n * 1024 ** 3;
+                if (u === 'MiB') return n * 1024 ** 2;
+                return n * 1024; // KiB
+              };
+              const speed = spdM ? toBytes(spdM[1]!, spdM[2]!) : 0;
+              const downloaded = dlM ? toBytes(dlM[1]!, dlM[2]!) : 0;
+              const total      = dlM ? toBytes(dlM[3]!, dlM[4]!) : 0;
+              const eta        = etaM ? parseInt(etaM[1]!) * 60 + parseInt(etaM[2]!) : 0;
+              onProgress(parseFloat(pct[1]!), speed, downloaded, total, eta);
+            }
           });
           proc.on('error', (err: Error) => reject(err));
           proc.on('close', () => {
@@ -165,9 +181,8 @@ export class DownloadService {
         try {
           await runYtDlp(
             [request.url, '-f', videoFormat, '-o', tempVideo, '--no-playlist', '--newline'],
-            (pct, spd) => {
-              sendProgress(pct * 0.45);
-              sendStatus(`Downloading video… ${spd}`);
+            (pct, speed, downloaded, total, eta) => {
+              sendProgress(pct * 0.45, speed, downloaded, total, eta);
             }
           );
         } catch (e) {
@@ -183,9 +198,8 @@ export class DownloadService {
         try {
           await runYtDlp(
             [request.url, '-f', 'bestaudio[ext=m4a]/bestaudio', '-o', tempAudio, '--no-playlist', '--newline'],
-            (pct, spd) => {
-              sendProgress(45 + pct * 0.45);
-              sendStatus(`Downloading audio… ${spd}`);
+            (pct, speed, downloaded, total, eta) => {
+              sendProgress(45 + pct * 0.45, speed, downloaded, total, eta);
             }
           );
         } catch (e) {
@@ -231,9 +245,8 @@ export class DownloadService {
         try {
           await runYtDlp(
             [request.url, '-f', 'bestaudio', '-o', tempOutput, '--no-playlist', '--newline'],
-            (pct, spd) => {
-              sendProgress(pct * 0.6);
-              sendStatus(`Downloading audio… ${spd}`);
+            (pct, speed, downloaded, total, eta) => {
+              sendProgress(pct * 0.6, speed, downloaded, total, eta);
             }
           );
         } catch (e) {

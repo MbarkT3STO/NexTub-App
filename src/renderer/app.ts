@@ -2,7 +2,7 @@ export {};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface VideoMetadata { title: string; duration: number; thumbnail: string; author: string; videoId: string; }
-interface DownloadProgress { percent: number; downloaded: number; total: number; speed: number; }
+interface DownloadProgress { percent: number; downloaded: number; total: number; speed: number; eta: number; }
 interface DownloadResult { success: boolean; filePath?: string; error?: string; }
 interface DownloadHistoryItem { id: string; title: string; thumbnail: string; type: 'mp4' | 'mp3'; filePath: string; downloadedAt: number; duration: number; }
 interface AppConfig { theme: 'light' | 'dark'; defaultDownloadDir: string; history: DownloadHistoryItem[]; }
@@ -80,6 +80,7 @@ const dlResultView    = el('dlResultView');
 const progressPercent = el('progressPercent');
 const progressBytes   = el('progressBytes');
 const progressSpeed   = el('progressSpeed');
+const progressEta     = el('progressEta');
 const progressTrack   = el('progressTrack');
 const progressFill    = el('progressFill');
 const progressStatus  = el('progressStatus');
@@ -111,6 +112,14 @@ function formatSpeed(bytesPerSec: number): string {
   if (!bytesPerSec || bytesPerSec <= 0) return '—';
   if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
   return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+}
+
+function formatEta(seconds: number): string {
+  if (!seconds || seconds <= 0) return '—';
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -295,6 +304,7 @@ function openDownloadModal(type: 'mp4' | 'mp3'): void {
   progressPercent.textContent = '0%';
   progressBytes.textContent = '—';
   progressSpeed.textContent = '—';
+  progressEta.textContent = '—';
   progressFill.style.width = '0%';
   progressTrack.setAttribute('aria-valuenow', '0');
   progressStatus.textContent = 'Starting…';
@@ -316,8 +326,11 @@ function updateProgress(p: DownloadProgress): void {
   progressPercent.textContent = `${pct}%`;
   progressFill.style.width = `${pct}%`;
   progressTrack.setAttribute('aria-valuenow', String(pct));
-  progressBytes.textContent = `${formatBytes(p.downloaded)} / ${formatBytes(p.total)}`;
+  progressBytes.textContent = p.downloaded > 0
+    ? `${formatBytes(p.downloaded)} / ${formatBytes(p.total)}`
+    : '—';
   progressSpeed.textContent = formatSpeed(p.speed);
+  progressEta.textContent = p.eta > 0 ? formatEta(p.eta) : '—';
 }
 
 // ── Download ──────────────────────────────────────────────────────────────────
