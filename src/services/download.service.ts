@@ -75,6 +75,7 @@ export class DownloadService {
       // ── Helpers ────────────────────────────────────────────────────────────
 
       /** Run a yt-dlp command, track the process, reject on cancel or error */
+      /** Run a yt-dlp command, track the process, reject on cancel or error */
       const runYtDlp = (
         args: string[],
         onProgress: (pct: number, speed: number, downloaded: number, total: number, eta: number) => void
@@ -87,30 +88,36 @@ export class DownloadService {
             ?? (proc as unknown as ChildProcess);
           this.registerProc(child as ChildProcess);
 
-          proc.on('ytDlpEvent', (_: string, data: string) => {
-            if (this.cancelled) { (child as ChildProcess).kill?.('SIGKILL'); return; }
-            const pct  = data.match(/(\d+\.?\d*)%/);
-            // speed: e.g. "1.23MiB/s" or "456.78KiB/s"
-            const spdM = data.match(/at\s+([\d.]+)(MiB|KiB|GiB)\/s/);
-            // downloaded/total: e.g. "12.34MiB of 56.78MiB"
-            const dlM  = data.match(/([\d.]+)(MiB|KiB|GiB)\s+of\s+([\d.]+)(MiB|KiB|GiB)/);
-            // ETA: e.g. "ETA 00:34"
-            const etaM = data.match(/ETA\s+(\d+):(\d+)/);
+          // yt-dlp-wrap parses the [download] line and emits a structured 'progress' event:
+          // { percent: number, totalSize: string, currentSpeed: string, eta: string }
+          const parseSize = (s?: string): number => {
+            if (!s || s === 'N/A') return 0;
+            const m = s.match(/([\d.]+)\s*(GiB|MiB|KiB|GB|MB|KB)/i);
+            if (!m) return 0;
+            const n = parseFloat(m[1]!);
+            const u = m[2]!.toUpperCase();
+            if (u.startsWith('G')) return n * 1024 ** 3;
+            if (u.startsWith('M')) return n * 1024 ** 2;
+            return n * 1024;
+          };
 
-            if (pct) {
-              const toBytes = (v: string, u: string) => {
-                const n = parseFloat(v);
-                if (u === 'GiB') return n * 1024 ** 3;
-                if (u === 'MiB') return n * 1024 ** 2;
-                return n * 1024; // KiB
-              };
-              const speed = spdM ? toBytes(spdM[1]!, spdM[2]!) : 0;
-              const downloaded = dlM ? toBytes(dlM[1]!, dlM[2]!) : 0;
-              const total      = dlM ? toBytes(dlM[3]!, dlM[4]!) : 0;
-              const eta        = etaM ? parseInt(etaM[1]!) * 60 + parseInt(etaM[2]!) : 0;
-              onProgress(parseFloat(pct[1]!), speed, downloaded, total, eta);
-            }
+          const parseEta = (s?: string): number => {
+            if (!s || s === 'N/A') return 0;
+            const parts = s.split(':').map(Number);
+            if (parts.length === 2) return (parts[0]! * 60) + parts[1]!;
+            if (parts.length === 3) return (parts[0]! * 3600) + (parts[1]! * 60) + parts[2]!;
+            return 0;
+          };
+
+          proc.on('progress', (p: { percent: number; totalSize?: string; currentSpeed?: string; eta?: string }) => {
+            if (this.cancelled) { (child as ChildProcess).kill?.('SIGKILL'); return; }
+            const speedVal  = parseSize(p.currentSpeed);
+            const total     = parseSize(p.totalSize);
+            const downloaded = total > 0 ? (p.percent / 100) * total : 0;
+            const eta       = parseEta(p.eta);
+            onProgress(p.percent, speedVal, downloaded, total, eta);
           });
+
           proc.on('error', (err: Error) => reject(err));
           proc.on('close', () => {
             if (this.cancelled) reject(new Error('cancelled'));
