@@ -125,8 +125,8 @@ function showToast(msg: string, type: 'default' | 'update' | 'error' = 'default'
 
 function setError(msg: string): void {
   urlError.textContent = msg;
-  if (msg) urlWrapper.style.boxShadow = 'var(--si), 0 0 0 2.5px var(--c-danger)';
-  else urlWrapper.style.boxShadow = '';
+  if (msg) urlWrapper.style.borderColor = 'var(--c-danger)';
+  else urlWrapper.style.borderColor = '';
 }
 
 function setFetchLoading(loading: boolean): void {
@@ -418,16 +418,16 @@ async function loadHistory(): Promise<void> {
   const history = await window.electronAPI.getHistory();
   historyCount.textContent = `${history.length} item${history.length !== 1 ? 's' : ''}`;
 
-  // Clear existing items (keep empty state)
+  // Remove all items except the empty state element
   Array.from(historyList.children).forEach(c => {
     if (c.id !== 'historyEmpty') c.remove();
   });
 
   if (history.length === 0) {
-    historyEmpty.hidden = false;
+    historyEmpty.removeAttribute('hidden');
     return;
   }
-  historyEmpty.hidden = true;
+  historyEmpty.setAttribute('hidden', '');
   history.forEach(item => historyList.appendChild(buildHistoryItem(item)));
 }
 
@@ -508,11 +508,10 @@ async function checkYtDlpReady(): Promise<void> {
 async function init(): Promise<void> {
   // Load config
   const config = await window.electronAPI.getConfig();
-  applyTheme(config.theme || 'light');
+  applyTheme(config.theme || 'dark');
   downloadDir = config.defaultDownloadDir || '';
 
   // Window controls
-  document.getElementById('btnMinimize')?.addEventListener('click', () => window.electronAPI.minimizeWindow());
   document.getElementById('btnClose')?.addEventListener('click', () => window.electronAPI.closeWindow());
 
   // Theme

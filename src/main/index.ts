@@ -19,17 +19,19 @@ let mainWindow: BrowserWindow | null = null;
 function createWindow(): void {
   const { screen } = require('electron');
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
-  const w = Math.round(sw * 0.80);
-  const h = Math.round(sh * 0.80);
+  const w = Math.round(sw * 0.70);
+  const h = Math.round(sh * 0.70);
 
   mainWindow = new BrowserWindow({
     width: w,
     height: h,
-    resizable: false,
-    maximizable: false,
+    minWidth: 560,
+    minHeight: 500,
+    resizable: true,
+    maximizable: true,
     frame: false,
     titleBarStyle: 'hidden',
-    backgroundColor: '#e8edf2',
+    backgroundColor: '#0d0d10',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
