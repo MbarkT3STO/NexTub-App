@@ -160,6 +160,12 @@ ipcMain.handle('check-file-exists', (_event, filePath: string) => {
   return fs.existsSync(filePath);
 });
 
+// Convert local path to file:// URL for the renderer's video element
+ipcMain.handle('get-file-url', (_event, filePath: string) => {
+  const { pathToFileURL } = require('url');
+  return pathToFileURL(filePath).toString();
+});
+
 // Open file / folder in OS
 ipcMain.handle(IPC_CHANNELS.OPEN_FILE, (_event, filePath: string) => {
   shell.openPath(filePath);

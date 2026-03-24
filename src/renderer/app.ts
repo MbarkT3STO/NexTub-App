@@ -30,6 +30,7 @@ declare global {
       onYtDlpReady(cb: () => void): void;
       onYtDlpUpdate(cb: (msg: string) => void): void;
       openDefaultDir(): Promise<void>;
+      getFileUrl(filePath: string): Promise<string>;
     };
   }
 }
@@ -94,6 +95,7 @@ const resultActions   = el('resultActions');
 const openFileBtn     = el<HTMLButtonElement>('openFileBtn');
 const openFolderBtn   = el<HTMLButtonElement>('openFolderBtn');
 const newDownloadBtn  = el<HTMLButtonElement>('newDownloadBtn');
+const playFileBtn     = el<HTMLButtonElement>('playFileBtn');
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -424,6 +426,8 @@ function showResult(result: DownloadResult, type: 'mp4' | 'mp3'): void {
     resultPath.textContent = result.filePath;
     resultPath.classList.add('result-path--visible');
     resultActions.classList.add('result-actions--visible');
+    // Only show Play button for video files
+    playFileBtn.style.display = type === 'mp4' ? '' : 'none';
     dlModalTitle.textContent = 'Complete';
     dlModalSub.textContent = 'Your file is ready';
     dlModalIcon.classList.add('modal__head-icon--success');
@@ -487,6 +491,9 @@ function buildHistoryItem(item: DownloadHistoryItem, fileExists: boolean): HTMLE
 
   const actionsHtml = fileExists
     ? `<div class="history-actions">
+        ${item.type === 'mp4' ? `<button class="history-action-btn history-action-btn--play" title="Play" data-action="play" data-path="${escapeHtml(item.filePath)}" data-title="${escapeHtml(item.title)}">
+          <i class="fa-solid fa-play"></i>
+        </button>` : ''}
         <button class="history-action-btn" title="Open file" data-action="open-file" data-path="${escapeHtml(item.filePath)}">
           <i class="fa-solid fa-arrow-up-right-from-square"></i>
         </button>
@@ -513,7 +520,8 @@ function buildHistoryItem(item: DownloadHistoryItem, fileExists: boolean): HTMLE
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const p = btn.dataset.path || '';
-        if (btn.dataset.action === 'open-file') window.electronAPI.openFile(p);
+        if (btn.dataset.action === 'play') openPlayer(p, btn.dataset.title || 'Video');
+        else if (btn.dataset.action === 'open-file') window.electronAPI.openFile(p);
         else window.electronAPI.openFolder(p);
       });
     });
@@ -560,6 +568,263 @@ async function checkYtDlpReady(): Promise<void> {
   window.electronAPI.onYtDlpUpdate((msg) => {
     if (msg.toLowerCase().includes('update')) showToast(msg, 'update');
   });
+}
+
+// ── Video Player ──────────────────────────────────────────────────────────────
+const playerOverlay   = el('playerOverlay');
+const playerVideo     = el<HTMLVideoElement>('playerVideo');
+const playerStage     = el('playerStage');
+const playerTitle     = el('playerTitle');
+const playerClose     = el<HTMLButtonElement>('playerClose');
+const playerPlayPause = el<HTMLButtonElement>('playerPlayPause');
+const playerPlayIcon  = el('playerPlayIcon');
+const playerSkipBack  = el<HTMLButtonElement>('playerSkipBack');
+const playerSkipFwd   = el<HTMLButtonElement>('playerSkipFwd');
+const playerMute      = el<HTMLButtonElement>('playerMute');
+const playerVolIcon   = el('playerVolIcon');
+const playerSeek      = el('playerSeek');
+const playerFill      = el('playerFill');
+const playerBuf       = el('playerBuf');
+const playerThumb     = el('playerThumb');
+const playerSeekTooltip = el('playerSeekTooltip');
+const playerCurrent   = el('playerCurrent');
+const playerDuration  = el('playerDuration');
+const playerVolSlider = el('playerVolSlider');
+const playerVolFill   = el('playerVolFill');
+const playerSpeed     = el<HTMLSelectElement>('playerSpeed');
+const playerFullscreen = el<HTMLButtonElement>('playerFullscreen');
+const thumbPlayBtn    = el<HTMLButtonElement>('thumbPlayBtn');
+const thumbDlProgress = el('thumbDlProgress');
+const thumbDlRingFill = document.getElementById('thumbDlRingFill') as unknown as SVGCircleElement;
+const thumbDlPct      = el('thumbDlPct');
+
+let controlsHideTimer: ReturnType<typeof setTimeout> | null = null;
+let thumbDownloading = false;
+
+function playerFmtTime(s: number): string {
+  if (!isFinite(s) || s < 0) return '0:00';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+function playerUpdateSeek(): void {
+  if (!playerVideo.duration) return;
+  const pct = (playerVideo.currentTime / playerVideo.duration) * 100;
+  playerFill.style.width = `${pct}%`;
+  playerThumb.style.left = `${pct}%`;
+  playerCurrent.textContent = playerFmtTime(playerVideo.currentTime);
+  // buffered
+  if (playerVideo.buffered.length > 0) {
+    const bufPct = (playerVideo.buffered.end(playerVideo.buffered.length - 1) / playerVideo.duration) * 100;
+    playerBuf.style.width = `${bufPct}%`;
+  }
+}
+
+function playerSetVolume(v: number): void {
+  playerVideo.volume = Math.max(0, Math.min(1, v));
+  playerVolFill.style.width = `${playerVideo.volume * 100}%`;
+  playerVideo.muted = playerVideo.volume === 0;
+  playerVolIcon.className = playerVideo.volume === 0
+    ? 'fa-solid fa-volume-xmark'
+    : playerVideo.volume < 0.5 ? 'fa-solid fa-volume-low' : 'fa-solid fa-volume-high';
+}
+
+function playerSyncPlayIcon(): void {
+  playerPlayIcon.className = playerVideo.paused ? 'fa-solid fa-play' : 'fa-solid fa-pause';
+  if (playerVideo.paused) playerStage.classList.add('paused');
+  else playerStage.classList.remove('paused');
+}
+
+function showControls(): void {
+  playerStage.classList.remove('controls-hidden');
+  if (controlsHideTimer) clearTimeout(controlsHideTimer);
+  if (!playerVideo.paused) {
+    controlsHideTimer = setTimeout(() => playerStage.classList.add('controls-hidden'), 3000);
+  }
+}
+
+function seekFromEvent(e: MouseEvent, bar: HTMLElement, cb: (ratio: number) => void): void {
+  const rect = bar.getBoundingClientRect();
+  cb(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+}
+
+function initPlayerEvents(): void {
+  playerStage.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('.player-controls, .player-top-bar')) return;
+    if (playerVideo.paused) playerVideo.play();
+    else playerVideo.pause();
+  });
+
+  playerStage.addEventListener('mousemove', showControls);
+  playerStage.addEventListener('mouseenter', showControls);
+  playerStage.addEventListener('mouseleave', () => {
+    if (!playerVideo.paused) playerStage.classList.add('controls-hidden');
+  });
+
+  playerPlayPause.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (playerVideo.paused) playerVideo.play();
+    else playerVideo.pause();
+  });
+
+  playerSkipBack.addEventListener('click', (e) => {
+    e.stopPropagation();
+    playerVideo.currentTime = Math.max(0, playerVideo.currentTime - 10);
+  });
+  playerSkipFwd.addEventListener('click', (e) => {
+    e.stopPropagation();
+    playerVideo.currentTime = Math.min(playerVideo.duration || 0, playerVideo.currentTime + 10);
+  });
+
+  playerVideo.addEventListener('play',  () => { playerSyncPlayIcon(); showControls(); });
+  playerVideo.addEventListener('pause', () => { playerSyncPlayIcon(); showControls(); });
+  playerVideo.addEventListener('ended', () => { playerVideo.currentTime = 0; playerSyncPlayIcon(); });
+  playerVideo.addEventListener('timeupdate', playerUpdateSeek);
+  playerVideo.addEventListener('loadedmetadata', () => {
+    playerDuration.textContent = playerFmtTime(playerVideo.duration);
+    playerUpdateSeek();
+  });
+
+  // Seek bar drag + tooltip
+  let seeking = false;
+  playerSeek.addEventListener('mousedown', (e) => {
+    e.stopPropagation(); seeking = true;
+    seekFromEvent(e, playerSeek, (r) => { playerVideo.currentTime = r * playerVideo.duration; });
+  });
+  playerSeek.addEventListener('mousemove', (e) => {
+    const rect = playerSeek.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    playerSeekTooltip.textContent = playerFmtTime(ratio * (playerVideo.duration || 0));
+    playerSeekTooltip.style.left = `${ratio * 100}%`;
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!seeking) return;
+    seekFromEvent(e, playerSeek, (r) => { playerVideo.currentTime = r * playerVideo.duration; });
+  });
+  document.addEventListener('mouseup', () => { seeking = false; });
+
+  // Volume drag
+  let volDragging = false;
+  playerVolSlider.addEventListener('mousedown', (e) => {
+    e.stopPropagation(); volDragging = true;
+    seekFromEvent(e, playerVolSlider, playerSetVolume);
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!volDragging) return;
+    seekFromEvent(e, playerVolSlider, playerSetVolume);
+  });
+  document.addEventListener('mouseup', () => { volDragging = false; });
+
+  playerMute.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (playerVideo.muted || playerVideo.volume === 0) {
+      playerVideo.muted = false;
+      playerSetVolume(playerVideo.volume || 0.8);
+    } else {
+      playerVideo.muted = true;
+      playerVolIcon.className = 'fa-solid fa-volume-xmark';
+    }
+  });
+
+  playerSpeed.addEventListener('change', (e) => {
+    e.stopPropagation();
+    playerVideo.playbackRate = parseFloat(playerSpeed.value);
+  });
+
+  playerFullscreen.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wrap = el('playerWrap');
+    if (!document.fullscreenElement) wrap.requestFullscreen();
+    else document.exitFullscreen();
+  });
+  document.addEventListener('fullscreenchange', () => {
+    const icon = playerFullscreen.querySelector('i')!;
+    icon.className = document.fullscreenElement ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+  });
+
+  playerOverlay.addEventListener('click', (e) => {
+    if (e.target === playerOverlay) closePlayer();
+  });
+
+  playerClose.addEventListener('click', (e) => { e.stopPropagation(); closePlayer(); });
+
+  document.addEventListener('keydown', (e) => {
+    if (!playerOverlay.classList.contains('player-overlay--visible')) return;
+    if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return;
+    showControls();
+    switch (e.key) {
+      case 'Escape': closePlayer(); break;
+      case ' ': case 'k': e.preventDefault(); playerPlayPause.click(); break;
+      case 'ArrowRight': playerVideo.currentTime = Math.min(playerVideo.duration||0, playerVideo.currentTime + 5); break;
+      case 'ArrowLeft':  playerVideo.currentTime = Math.max(0, playerVideo.currentTime - 5); break;
+      case 'ArrowUp':    e.preventDefault(); playerSetVolume(playerVideo.volume + 0.1); break;
+      case 'ArrowDown':  e.preventDefault(); playerSetVolume(playerVideo.volume - 0.1); break;
+      case 'm': playerMute.click(); break;
+      case 'f': playerFullscreen.click(); break;
+    }
+  });
+}
+
+
+async function openPlayer(filePath: string, title: string): Promise<void> {
+  const fileUrl = await window.electronAPI.getFileUrl(filePath);
+  playerTitle.textContent = title;
+  playerVideo.src = fileUrl;
+  playerSetVolume(1);
+  playerOverlay.classList.add('player-overlay--visible');
+  playerVideo.play().catch(() => {});
+}
+
+function closePlayer(): void {
+  playerOverlay.classList.remove('player-overlay--visible');
+  playerVideo.pause();
+  playerVideo.src = '';
+}
+
+// ── Thumb Download & Play ─────────────────────────────────────────────────────
+async function thumbDownloadAndPlay(): Promise<void> {
+  if (!currentMeta || isDownloading || thumbDownloading) return;
+
+  const url = urlInput.value.trim();
+  const outputDir = downloadDir;
+  const circumference = 94.2;
+
+  // Switch UI to progress ring
+  thumbDownloading = true;
+  thumbPlayBtn.classList.add('hidden');
+  thumbDlProgress.classList.add('active');
+  thumbDlRingFill.style.strokeDashoffset = String(circumference);
+  thumbDlPct.textContent = '0%';
+
+  window.electronAPI.removeDownloadListeners();
+  window.electronAPI.onDownloadProgress((p) => {
+    const pct = Math.min(Math.round(p.percent || 0), 100);
+    const offset = circumference - (pct / 100) * circumference;
+    thumbDlRingFill.style.strokeDashoffset = String(offset);
+    thumbDlPct.textContent = `${pct}%`;
+  });
+
+  try {
+    const result = await window.electronAPI.startDownload({ url, type: 'mp4', outputDir });
+    if (result.success && result.filePath) {
+      lastFilePath = result.filePath;
+      openPlayer(result.filePath, currentMeta.title);
+    } else {
+      showToast(result.error || 'Download failed.', 'error');
+    }
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : 'Download failed.', 'error');
+  } finally {
+    thumbDownloading = false;
+    thumbDlProgress.classList.remove('active');
+    thumbPlayBtn.classList.remove('hidden');
+    thumbDlRingFill.style.strokeDashoffset = String(circumference);
+    thumbDlPct.textContent = '0%';
+    window.electronAPI.removeDownloadListeners();
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -612,6 +877,10 @@ async function init(): Promise<void> {
   // Result actions
   openFileBtn.addEventListener('click', () => { if (lastFilePath) window.electronAPI.openFile(lastFilePath); });
   openFolderBtn.addEventListener('click', () => { if (lastFilePath) window.electronAPI.openFolder(lastFilePath); });
+  playFileBtn.addEventListener('click', () => { if (lastFilePath) openPlayer(lastFilePath, lastFilePath.split(/[\\/]/).pop() || 'Video'); });
+
+  // Thumbnail play button — download MP4 then auto-play
+  thumbPlayBtn.addEventListener('click', () => thumbDownloadAndPlay());
 
   // History
   clearHistoryBtn.addEventListener('click', clearHistory);
@@ -624,6 +893,9 @@ async function init(): Promise<void> {
 
   // yt-dlp
   checkYtDlpReady();
+
+  // Player
+  initPlayerEvents();
 }
 
 document.addEventListener('DOMContentLoaded', init);

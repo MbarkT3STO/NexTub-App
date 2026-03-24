@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Open default download folder
   openDefaultDir: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_DEFAULT_DIR),
 
+  // Convert local file path to a file:// URL safe for the renderer
+  getFileUrl: (filePath: string) => ipcRenderer.invoke('get-file-url', filePath),
+
   // Window controls
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   maximizeWindow: () => ipcRenderer.send('window-maximize'),
