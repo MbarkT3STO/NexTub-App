@@ -41,8 +41,24 @@ export class YouTubeService {
         ?.sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url) ??
       '';
 
+    const rawTitle = (info['title'] as string) ?? '';
+    const isFacebook = /facebook\.com|fb\.watch/.test(url);
+
+    let title: string;
+    if (isFacebook) {
+      // Facebook uses the post body as the title — grab only the first line/sentence
+      // and cap it so it doesn't bleed into description territory.
+      const firstLine = rawTitle
+        .split(/[\n\r]+/)[0]!          // first line only
+        .split(/[.!?]\s/)[0]!          // first sentence only
+        .trim();
+      title = firstLine.substring(0, 80) || 'Facebook Video';
+    } else {
+      title = rawTitle || 'Unknown Title';
+    }
+
     return {
-      title: (info['title'] as string) ?? 'Unknown Title',
+      title,
       duration: (info['duration'] as number) ?? 0,
       thumbnail,
       author: (info['uploader'] as string) ?? (info['channel'] as string) ?? 'Unknown',
