@@ -54,6 +54,36 @@ export function isValidYouTubeUrl(url: string): boolean {
 }
 
 /**
+ * Validates a Facebook video URL.
+ */
+export function isValidFacebookUrl(url: string): boolean {
+  const patterns = [
+    /^https?:\/\/(www\.|m\.)?facebook\.com\/.+\/videos\//,
+    /^https?:\/\/(www\.|m\.)?facebook\.com\/video(\.php|\?v=)/,
+    /^https?:\/\/(www\.|m\.)?facebook\.com\/watch/,
+    /^https?:\/\/(www\.|m\.)?fb\.watch\//,
+    /^https?:\/\/(www\.|m\.)?facebook\.com\/reel\//,
+  ];
+  return patterns.some((p) => p.test(url.trim()));
+}
+
+/**
+ * Returns the platform for a given URL, or null if unsupported.
+ */
+export function detectPlatform(url: string): 'youtube' | 'facebook' | null {
+  if (isValidYouTubeUrl(url)) return 'youtube';
+  if (isValidFacebookUrl(url)) return 'facebook';
+  return null;
+}
+
+/**
+ * Validates a URL from any supported platform.
+ */
+export function isValidVideoUrl(url: string): boolean {
+  return detectPlatform(url) !== null;
+}
+
+/**
  * Generates a unique ID.
  */
 export function generateId(): string {

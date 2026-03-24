@@ -109,13 +109,14 @@ export class DownloadService {
             return 0;
           };
 
-          proc.on('progress', (p: { percent: number; totalSize?: string; currentSpeed?: string; eta?: string }) => {
+          proc.on('progress', (p: { percent?: number; totalSize?: string; currentSpeed?: string; eta?: string }) => {
             if (this.cancelled) { (child as ChildProcess).kill?.('SIGKILL'); return; }
-            const speedVal  = parseSize(p.currentSpeed);
-            const total     = parseSize(p.totalSize);
-            const downloaded = total > 0 ? (p.percent / 100) * total : 0;
-            const eta       = parseEta(p.eta);
-            onProgress(p.percent, speedVal, downloaded, total, eta);
+            const pct        = p.percent ?? 0;
+            const speedVal   = parseSize(p.currentSpeed);
+            const total      = parseSize(p.totalSize);
+            const downloaded = total > 0 ? (pct / 100) * total : 0;
+            const eta        = parseEta(p.eta);
+            onProgress(pct, speedVal, downloaded, total, eta);
           });
 
           proc.on('error', (err: Error) => reject(err));
@@ -165,74 +166,145 @@ export class DownloadService {
       // ── MP4 ────────────────────────────────────────────────────────────────
       if (request.type === 'mp4') {
         const outputPath = path.join(request.outputDir, `${safeTitle}.mp4`);
-        const tempId = generateId();
-        const tempVideo = path.join(os.tmpdir(), `nextub_${tempId}_video.mp4`);
-        const tempAudio = path.join(os.tmpdir(), `nextub_${tempId}_audio.m4a`);
+        const isFacebook = /facebook\.com|fb\.watch/.test(request.url);
 
-        const cleanup = () => {
-          for (const f of [tempVideo, tempAudio]) {
-            try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch {}
+        if (isFacebook) {
+          // Facebook: download best video-only and best audio-only streams separately,
+          // then merge with our bundled ffmpeg — same reliable approach as YouTube
+          const tempId = generateId();
+          const tempVideo = path.join(os.tmpdir(), `nextub_${tempId}_video.%(ext)s`);
+          const tempAudio = path.join(os.tmpdir(), `nextub_${tempId}_audio.%(ext)s`);
+          const tempVideoBase = path.join(os.tmpdir(), `nextub_${tempId}_video`);
+          const tempAudioBase = path.join(os.tmpdir(), `nextub_${tempId}_audio`);
+
+          const findTemp = (base: string): string | null => {
+            const dir = path.dirname(base);
+            const name = path.basename(base);
+            const found = fs.readdirSync(dir).find(f => f.startsWith(name));
+            return found ? path.join(dir, found) : null;
+          };
+
+          const cleanupFb = () => {
+            for (const base of [tempVideoBase, tempAudioBase]) {
+              const f = findTemp(base);
+              if (f) try { fs.unlinkSync(f); } catch {}
+            }
+          };
+
+          // Pass 1 — best video stream (no audio)
+          sendStatus('Downloading video stream...');
+          try {
+            await runYtDlp(
+              [request.url, '-f', 'bestvideo[ext=mp4]/bestvideo', '-o', tempVideo, '--newline'],
+              (pct, speed, downloaded, total, eta) => { sendProgress(pct * 0.45, speed, downloaded, total, eta); }
+            );
+          } catch (e) {
+            cleanupFb();
+            if (this.cancelled) return { success: false, error: 'Download cancelled' };
+            throw e;
           }
-        };
 
-        const quality = request.quality ?? 'best';
-        const heightMap: Record<string, string> = {
-          '1080p': '[height<=1080]', '720p': '[height<=720]',
-          '480p':  '[height<=480]',  '360p': '[height<=360]', 'best': '',
-        };
-        const hf = heightMap[quality] ?? '';
-        const videoFormat = `bestvideo${hf}[ext=mp4]/bestvideo${hf}`;
+          if (this.cancelled) { cleanupFb(); return { success: false, error: 'Download cancelled' }; }
 
-        // Pass 1 — video
-        sendStatus(`Downloading video stream (${quality})...`);
-        try {
-          await runYtDlp(
-            [request.url, '-f', videoFormat, '-o', tempVideo, '--no-playlist', '--newline'],
-            (pct, speed, downloaded, total, eta) => {
-              sendProgress(pct * 0.45, speed, downloaded, total, eta);
+          // Pass 2 — best audio stream
+          sendStatus('Downloading audio stream...');
+          try {
+            await runYtDlp(
+              [request.url, '-f', 'bestaudio', '-o', tempAudio, '--newline'],
+              (pct, speed, downloaded, total, eta) => { sendProgress(45 + pct * 0.45, speed, downloaded, total, eta); }
+            );
+          } catch (e) {
+            cleanupFb();
+            if (this.cancelled) return { success: false, error: 'Download cancelled' };
+            throw e;
+          }
+
+          if (this.cancelled) { cleanupFb(); return { success: false, error: 'Download cancelled' }; }
+
+          const videoFile = findTemp(tempVideoBase);
+          const audioFile = findTemp(tempAudioBase);
+
+          if (!videoFile) { cleanupFb(); throw new Error('Video stream download failed — no output file found'); }
+          if (!audioFile) { cleanupFb(); throw new Error('Audio stream download failed — no output file found'); }
+
+          // Pass 3 — merge with bundled ffmpeg
+          sendStatus('Merging audio & video...');
+          sendProgress(92);
+          try {
+            await runFfmpeg([
+              '-i', videoFile, '-i', audioFile,
+              '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', '-y', outputPath,
+            ]);
+          } catch (e) {
+            cleanupFb();
+            if (this.cancelled) return { success: false, error: 'Download cancelled' };
+            throw e;
+          }
+          cleanupFb();
+          if (this.cancelled) return { success: false, error: 'Download cancelled' };
+
+        } else {
+          // YouTube — two-pass separate streams then merge
+          const tempId = generateId();
+          const tempVideo = path.join(os.tmpdir(), `nextub_${tempId}_video.mp4`);
+          const tempAudio = path.join(os.tmpdir(), `nextub_${tempId}_audio.m4a`);
+          const cleanup = () => {
+            for (const f of [tempVideo, tempAudio]) {
+              try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch {}
             }
-          );
-        } catch (e) {
+          };
+
+          const quality = request.quality ?? 'best';
+          const heightMap: Record<string, string> = {
+            '1080p': '[height<=1080]', '720p': '[height<=720]',
+            '480p':  '[height<=480]',  '360p': '[height<=360]', 'best': '',
+          };
+          const hf = heightMap[quality] ?? '';
+          const videoFormat = `bestvideo${hf}[ext=mp4]/bestvideo${hf}`;
+
+          sendStatus(`Downloading video stream (${quality})...`);
+          try {
+            await runYtDlp(
+              [request.url, '-f', videoFormat, '-o', tempVideo, '--no-playlist', '--newline'],
+              (pct, speed, downloaded, total, eta) => { sendProgress(pct * 0.45, speed, downloaded, total, eta); }
+            );
+          } catch (e) {
+            cleanup();
+            if (this.cancelled) return { success: false, error: 'Download cancelled' };
+            throw e;
+          }
+
+          if (this.cancelled) { cleanup(); return { success: false, error: 'Download cancelled' }; }
+
+          sendStatus('Downloading audio stream...');
+          try {
+            await runYtDlp(
+              [request.url, '-f', 'bestaudio[ext=m4a]/bestaudio', '-o', tempAudio, '--no-playlist', '--newline'],
+              (pct, speed, downloaded, total, eta) => { sendProgress(45 + pct * 0.45, speed, downloaded, total, eta); }
+            );
+          } catch (e) {
+            cleanup();
+            if (this.cancelled) return { success: false, error: 'Download cancelled' };
+            throw e;
+          }
+
+          if (this.cancelled) { cleanup(); return { success: false, error: 'Download cancelled' }; }
+
+          sendStatus('Merging audio & video...');
+          sendProgress(92);
+          try {
+            await runFfmpeg([
+              '-i', tempVideo, '-i', tempAudio,
+              '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', '-y', outputPath,
+            ]);
+          } catch (e) {
+            cleanup();
+            if (this.cancelled) return { success: false, error: 'Download cancelled' };
+            throw e;
+          }
           cleanup();
           if (this.cancelled) return { success: false, error: 'Download cancelled' };
-          throw e;
         }
-
-        if (this.cancelled) { cleanup(); return { success: false, error: 'Download cancelled' }; }
-
-        // Pass 2 — audio
-        sendStatus('Downloading audio stream...');
-        try {
-          await runYtDlp(
-            [request.url, '-f', 'bestaudio[ext=m4a]/bestaudio', '-o', tempAudio, '--no-playlist', '--newline'],
-            (pct, speed, downloaded, total, eta) => {
-              sendProgress(45 + pct * 0.45, speed, downloaded, total, eta);
-            }
-          );
-        } catch (e) {
-          cleanup();
-          if (this.cancelled) return { success: false, error: 'Download cancelled' };
-          throw e;
-        }
-
-        if (this.cancelled) { cleanup(); return { success: false, error: 'Download cancelled' }; }
-
-        // Pass 3 — merge
-        sendStatus('Merging audio & video...');
-        sendProgress(92);
-        try {
-          await runFfmpeg([
-            '-i', tempVideo, '-i', tempAudio,
-            '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', '-y', outputPath,
-          ]);
-        } catch (e) {
-          cleanup();
-          if (this.cancelled) return { success: false, error: 'Download cancelled' };
-          throw e;
-        }
-
-        cleanup();
-        if (this.cancelled) return { success: false, error: 'Download cancelled' };
 
         sendProgress(100);
         sendStatus('Download complete!');

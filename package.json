@@ -4,9 +4,10 @@
   "description": "A modern YouTube downloader and converter desktop app",
   "main": "dist/main/main/index.js",
   "scripts": {
-    "dev": "concurrently \"tsc -w -p tsconfig.main.json\" \"tsc -w -p tsconfig.renderer.json\"",
+    "dev": "concurrently \"tsc -w -p tsconfig.main.json\" \"tsc -w -p tsconfig.renderer.json\" \"npm run dev:electron\"",
+    "dev:electron": "cross-env NODE_ENV=development electron .",
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json",
-    "start": "npm run build && electron .",
+    "start": "cls && npm run build && electron .",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
@@ -24,8 +25,10 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "concurrently": "^8.2.0",
+    "cross-env": "^10.1.0",
     "electron": "^31.7.7",
     "electron-builder": "^24.0.0",
+    "electron-reload": "^2.0.0-alpha.1",
     "typescript": "^5.4.0"
   },
   "dependencies": {

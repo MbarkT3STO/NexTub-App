@@ -5,8 +5,21 @@ import { DownloadService } from '../services/download.service.js';
 import { ConfigService } from '../services/config.service.js';
 import { getYtDlp, autoUpdateYtDlp } from '../services/ytdlp.manager.js';
 import { IPC_CHANNELS, DownloadRequest } from '../types/index.js';
-import { isValidYouTubeUrl } from '../utils/sanitize.js';
+import { isValidYouTubeUrl, isValidVideoUrl } from '../utils/sanitize.js';
 import { logger } from '../utils/logger.js';
+
+// Hot reload in development
+if (process.env.NODE_ENV === 'development') {
+  require('electron-reload')(__dirname, {
+    electron: path.join(
+      __dirname,
+      '../../../node_modules/.bin',
+      process.platform === 'win32' ? 'electron.cmd' : 'electron'
+    ),
+    hardResetMethod: 'exit',
+    watched: [path.join(__dirname, '../../../dist')],
+  });
+}
 
 // ── Services ──────────────────────────────────────────────────────────────────
 const configService = new ConfigService();
@@ -83,8 +96,8 @@ app.on('window-all-closed', () => {
 
 // Fetch video metadata
 ipcMain.handle(IPC_CHANNELS.FETCH_METADATA, async (_event, url: string) => {
-  if (!isValidYouTubeUrl(url)) {
-    throw new Error('Invalid YouTube URL. Please enter a valid YouTube link.');
+  if (!isValidVideoUrl(url)) {
+    throw new Error('Invalid URL. Please enter a valid YouTube or Facebook video link.');
   }
   return youtubeService.getMetadata(url);
 });
@@ -94,8 +107,8 @@ ipcMain.handle(
   IPC_CHANNELS.START_DOWNLOAD,
   async (_event, request: DownloadRequest) => {
     if (!mainWindow) throw new Error('No window available');
-    if (!isValidYouTubeUrl(request.url)) {
-      throw new Error('Invalid YouTube URL.');
+    if (!isValidVideoUrl(request.url)) {
+      throw new Error('Invalid URL. Please enter a valid YouTube or Facebook video link.');
     }
     return downloadService.download(request, mainWindow);
   }

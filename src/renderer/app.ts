@@ -200,12 +200,15 @@ function clearUrl(): void {
   previewCard.hidden = true;
   actionRow.hidden = true;
   currentMeta = null;
+  // Restore quality selector visibility
+  const qualityGroup = qualitySelect.closest<HTMLElement>('.opt-group');
+  if (qualityGroup) qualityGroup.style.display = '';
 }
 
 async function checkClipboard(): Promise<void> {
   try {
     const text = await navigator.clipboard.readText();
-    if (text && /youtube\.com|youtu\.be/.test(text) && !urlInput.value) {
+    if (text && /youtube\.com|youtu\.be|facebook\.com|fb\.watch/.test(text) && !urlInput.value) {
       urlInput.value = text;
       clearUrlBtn.hidden = false;
     }
@@ -230,8 +233,11 @@ function updateFilenamePreview(type: 'mp4' | 'mp3' = 'mp4'): void {
 // ── Fetch Metadata ────────────────────────────────────────────────────────────
 async function fetchMetadata(): Promise<void> {
   const url = urlInput.value.trim();
-  if (!url) { setError('Please enter a YouTube URL.'); return; }
-  if (!/youtube\.com|youtu\.be/.test(url)) { setError('Please enter a valid YouTube URL.'); return; }
+  if (!url) { setError('Please enter a video URL.'); return; }
+  if (!/youtube\.com|youtu\.be|facebook\.com|fb\.watch/.test(url)) {
+    setError('Please enter a valid YouTube or Facebook video URL.');
+    return;
+  }
 
   setError('');
   setFetchLoading(true);
@@ -261,6 +267,20 @@ function renderPreview(meta: VideoMetadata): void {
   if (authorSpan) authorSpan.textContent = meta.author;
   downloadDirText.textContent = downloadDir || '~/Downloads';
   updateFilenamePreview('mp4');
+
+  // Update platform pill based on URL
+  const platformPill = document.querySelector<HTMLElement>('.platform-pill');
+  const isFacebook = /facebook\.com|fb\.watch/.test(urlInput.value.trim());
+  if (platformPill) {
+    platformPill.innerHTML = isFacebook
+      ? '<i class="fa-brands fa-facebook"></i> Facebook'
+      : '<i class="fa-brands fa-youtube"></i> YouTube';
+  }
+
+  // Hide quality selector for Facebook — it doesn't support quality tiers
+  const qualityGroup = qualitySelect.closest<HTMLElement>('.opt-group');
+  if (qualityGroup) qualityGroup.style.display = isFacebook ? 'none' : '';
+
   previewCard.hidden = false;
   actionRow.hidden = false;
 }
