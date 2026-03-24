@@ -63,6 +63,7 @@ export function isValidFacebookUrl(url: string): boolean {
     /^https?:\/\/(www\.|m\.)?facebook\.com\/watch/,
     /^https?:\/\/(www\.|m\.)?fb\.watch\//,
     /^https?:\/\/(www\.|m\.)?facebook\.com\/reel\//,
+    /^https?:\/\/(www\.|m\.)?facebook\.com\/share\//,
   ];
   return patterns.some((p) => p.test(url.trim()));
 }
