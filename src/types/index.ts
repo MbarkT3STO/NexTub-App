@@ -37,6 +37,7 @@ export interface DownloadRequest {
   type: DownloadType;
   outputDir: string;
   quality?: VideoQuality;
+  customName?: string;
 }
 
 export type VideoQuality = '1080p' | '720p' | '480p' | '360p' | 'best';

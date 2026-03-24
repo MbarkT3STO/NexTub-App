@@ -407,10 +407,12 @@ input, select { font-family: inherit; outline: none; border: none; }
 
 /* ── Options Row ── */
 .options-row {
-  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+  display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
 }
 .opt-group { display: flex; flex-direction: column; gap: 5px; }
 .opt-group--grow { flex: 1; min-width: 0; }
+.opt-group .select-wrap,
+.opt-group .filename-box { height: 100%; box-sizing: border-box; }
 .opt-label {
   font-size: 10px; font-weight: 600; color: var(--t3);
   text-transform: uppercase; letter-spacing: 0.6px;
@@ -433,21 +435,29 @@ input, select { font-family: inherit; outline: none; border: none; }
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: var(--r-s); padding: 9px 12px; min-width: 0; overflow: hidden;
 }
+.filename-box:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
 .filename-box i { color: var(--accent); font-size: 11px; flex-shrink: 0; }
-.filename-text {
-  font-size: 11.5px; font-weight: 400; color: var(--t2);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.filename-input {
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+  font-size: 11.5px; font-weight: 400; color: var(--t1);
+  font-family: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.filename-ext {
+  font-size: 11px; font-weight: 600; color: var(--accent);
+  flex-shrink: 0; opacity: 0.8;
 }
 
 /* ── Download Buttons ── */
-.action-row { display: flex; gap: 8px; flex-wrap: wrap; }
-
+.action-row {
+  display: flex; flex-direction: row; gap: 8px;
+  flex-wrap: nowrap; width: 100%;
+}
 .dl-btn {
-  flex: 1; display: flex; align-items: center; gap: 12px;
+  flex: 1 1 0; display: flex; align-items: center; gap: 12px;
   padding: 13px 16px; border-radius: var(--r-l);
   cursor: pointer; border: 1px solid var(--border);
   background: var(--surface-2);
-  transition: all var(--tf); min-width: 0;
+  transition: all var(--tf); min-width: 0; overflow: hidden;
 }
 .dl-btn:hover { border-color: var(--border-strong); background: var(--surface-3); transform: translateY(-1px); }
 .dl-btn:active { transform: scale(0.98) translateY(0); }
@@ -772,7 +782,11 @@ input, select { font-family: inherit; outline: none; border: none; }
   .thumb-wrap, .thumb { width: 100%; height: auto; aspect-ratio: 16/9; }
   .options-row { flex-direction: column; align-items: stretch; }
   .select { min-width: unset; width: 100%; }
-  .action-row { flex-direction: column; }
+  .action-row { flex-direction: row; flex-wrap: nowrap; }
+  .dl-btn { padding: 11px 10px; gap: 8px; }
+  .dl-btn__label { font-size: 12px; }
+  .dl-btn__sub { font-size: 10px; }
+  .dl-btn__icon { width: 30px; height: 30px; font-size: 13px; }
   .modal-overlay { padding: 0; align-items: flex-end; }
   .modal {
     max-width: 100%; border-radius: var(--r-2xl) var(--r-2xl) 0 0;

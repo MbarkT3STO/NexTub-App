@@ -11,7 +11,7 @@ declare global {
   interface Window {
     electronAPI: {
       fetchMetadata(url: string): Promise<VideoMetadata>;
-      startDownload(req: { url: string; type: 'mp4' | 'mp3'; outputDir: string; quality?: string }): Promise<DownloadResult>;
+      startDownload(req: { url: string; type: 'mp4' | 'mp3'; outputDir: string; quality?: string; customName?: string }): Promise<DownloadResult>;
       cancelDownload(): Promise<void>;
       onDownloadProgress(cb: (p: DownloadProgress) => void): void;
       onDownloadStatus(cb: (s: string) => void): void;
@@ -56,7 +56,8 @@ const videoAuthor     = el('videoAuthor');
 const downloadDirText = el('downloadDirText');
 const changeDirBtn    = el<HTMLButtonElement>('changeDirBtn');
 const qualitySelect   = el<HTMLSelectElement>('qualitySelect');
-const filenameText    = el('filenameText');
+const filenameInput   = el<HTMLInputElement>('filenameInput');
+const filenameExt     = el('filenameExt');
 const actionRow       = el('actionRow');
 const downloadVideoBtn = el<HTMLButtonElement>('downloadVideoBtn');
 const downloadAudioBtn = el<HTMLButtonElement>('downloadAudioBtn');
@@ -203,6 +204,9 @@ function clearUrl(): void {
   // Restore quality selector visibility
   const qualityGroup = qualitySelect.closest<HTMLElement>('.opt-group');
   if (qualityGroup) qualityGroup.style.display = '';
+  // Reset filename edited state
+  delete filenameInput.dataset.userEdited;
+  filenameInput.value = '';
 }
 
 async function checkClipboard(): Promise<void> {
@@ -221,12 +225,14 @@ async function checkClipboard(): Promise<void> {
 function updateFilenamePreview(type: 'mp4' | 'mp3' = 'mp4'): void {
   if (!currentMeta) return;
   const safe = sanitizeForDisplay(currentMeta.title).substring(0, 60) || 'video';
-  filenameText.textContent = `${safe}.${type}`;
+  // Only reset the name if the user hasn't edited it yet
+  if (!filenameInput.dataset.userEdited) {
+    filenameInput.value = safe;
+  }
+  filenameExt.textContent = `.${type}`;
   const icon = document.getElementById('filenameIcon');
   if (icon) {
-    icon.className = type === 'mp4'
-      ? 'fa-solid fa-file-video'
-      : 'fa-solid fa-file-audio';
+    icon.className = type === 'mp4' ? 'fa-solid fa-file-video' : 'fa-solid fa-file-audio';
   }
 }
 
@@ -360,6 +366,7 @@ async function startDownload(type: 'mp4' | 'mp3'): Promise<void> {
   const url = urlInput.value.trim();
   const quality = qualitySelect.value;
   const outputDir = downloadDir;
+  const customName = filenameInput.value.trim() || undefined;
 
   isDownloading = true;
   actionRow.hidden = true;
@@ -376,7 +383,7 @@ async function startDownload(type: 'mp4' | 'mp3'): Promise<void> {
   });
 
   try {
-    const result = await window.electronAPI.startDownload({ url, type, outputDir, quality });
+    const result = await window.electronAPI.startDownload({ url, type, outputDir, quality, customName });
     showResult(result, type);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Download failed.';
@@ -587,6 +594,11 @@ async function init(): Promise<void> {
 
   // Quality select — update filename preview
   qualitySelect.addEventListener('change', () => updateFilenamePreview('mp4'));
+
+  // Mark filename as user-edited when they type in it
+  filenameInput.addEventListener('input', () => {
+    filenameInput.dataset.userEdited = '1';
+  });
 
   // Download buttons
   downloadVideoBtn.addEventListener('click', () => startDownload('mp4'));

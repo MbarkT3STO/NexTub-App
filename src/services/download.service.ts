@@ -69,7 +69,7 @@ export class DownloadService {
       const metadata = await this.youtubeService.getMetadata(request.url);
       if (this.cancelled) return { success: false, error: 'Download cancelled' };
 
-      const safeTitle = sanitizeFilename(metadata.title);
+      const safeTitle = sanitizeFilename(request.customName?.trim() || metadata.title);
       const ytdlp = await getYtDlp();
 
       // ── Helpers ────────────────────────────────────────────────────────────
