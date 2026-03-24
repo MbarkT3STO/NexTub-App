@@ -178,6 +178,44 @@ ipcMain.handle(IPC_CHANNELS.OPEN_DEFAULT_DIR, () => {
   shell.openPath(configService.getConfig().defaultDownloadDir);
 });
 
+// Trim video using ffmpeg
+ipcMain.handle('trim-video', async (_event, filePath: string, startSec: number, endSec: number) => {
+  const { spawn } = require('child_process');
+  const ffmpegPath: string = require('ffmpeg-static') ?? 'ffmpeg';
+
+  logger.info(`Trimming: ${filePath} from ${startSec}s to ${endSec}s`);
+
+  const ext = path.extname(filePath);
+  const base = filePath.slice(0, filePath.length - ext.length);
+  const outPath = `${base}_trim_${Math.floor(startSec)}-${Math.floor(endSec)}${ext}`;
+
+  return new Promise<{ success: boolean; filePath?: string; error?: string }>((resolve) => {
+    // -ss after -i = frame-accurate seek (slower but correct)
+    // -t = duration of the output clip
+    const proc = spawn(ffmpegPath, [
+      '-i', filePath,
+      '-ss', String(startSec),
+      '-t',  String(endSec - startSec),
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+      '-c:a', 'aac', '-b:a', '192k',
+      '-movflags', '+faststart',
+      '-y', outPath,
+    ]);
+    let stderr = '';
+    proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+    proc.on('close', (code: number) => {
+      if (code === 0) {
+        logger.info(`Trim complete: ${outPath}`);
+        resolve({ success: true, filePath: outPath });
+      } else {
+        logger.error(`Trim failed (code ${code}): ${stderr.slice(-400)}`);
+        resolve({ success: false, error: `ffmpeg exited with code ${code}. ${stderr.slice(-200)}` });
+      }
+    });
+    proc.on('error', (e: Error) => resolve({ success: false, error: e.message }));
+  });
+});
+
 // Window controls (custom titlebar)
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
 ipcMain.on('window-maximize', () => {

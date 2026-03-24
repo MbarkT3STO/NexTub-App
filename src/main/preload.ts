@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Convert local file path to a file:// URL safe for the renderer
   getFileUrl: (filePath: string) => ipcRenderer.invoke('get-file-url', filePath),
 
+  // Trim video
+  trimVideo: (filePath: string, startSec: number, endSec: number) =>
+    ipcRenderer.invoke('trim-video', filePath, startSec, endSec),
+
   // Window controls
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   maximizeWindow: () => ipcRenderer.send('window-maximize'),

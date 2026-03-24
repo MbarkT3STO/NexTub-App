@@ -31,6 +31,7 @@ declare global {
       onYtDlpUpdate(cb: (msg: string) => void): void;
       openDefaultDir(): Promise<void>;
       getFileUrl(filePath: string): Promise<string>;
+      trimVideo(filePath: string, startSec: number, endSec: number): Promise<{ success: boolean; filePath?: string; error?: string }>;
     };
   }
 }
@@ -570,6 +571,135 @@ async function checkYtDlpReady(): Promise<void> {
   });
 }
 
+// ── Trim ─────────────────────────────────────────────────────────────────────
+function parseTrimTime(val: string): number | null {
+  val = val.trim();
+  // Accept h:mm:ss, m:ss, or plain seconds
+  const parts = val.split(':').map(Number);
+  if (parts.some(isNaN)) return null;
+  if (parts.length === 1) return parts[0]!;
+  if (parts.length === 2) return parts[0]! * 60 + parts[1]!;
+  if (parts.length === 3) return parts[0]! * 3600 + parts[1]! * 60 + parts[2]!;
+  return null;
+}
+
+function trimUpdateDuration(): void {
+  const dur = trimEnd - trimStart;
+  if (dur > 0) {
+    trimDurationLabel.textContent = `${playerFmtTime(dur)} selected`;
+    trimDurationLabel.style.color = 'rgba(255,255,255,0.55)';
+  } else {
+    trimDurationLabel.textContent = 'End must be after start';
+    trimDurationLabel.style.color = 'var(--c-danger)';
+  }
+  trimSave.disabled = dur <= 0;
+}
+
+function enterTrimMode(): void {
+  trimActive = true;
+  const dur = playerVideo.duration || 0;
+  trimStart = 0;
+  trimEnd   = dur;
+  trimStartInput.value = playerFmtTime(trimStart);
+  trimEndInput.value   = playerFmtTime(trimEnd);
+  playerStage.classList.add('trim-mode');
+  playerTrimToggle.classList.add('active');
+  trimUpdateDuration();
+}
+
+function exitTrimMode(): void {
+  trimActive = false;
+  playerStage.classList.remove('trim-mode');
+  playerTrimToggle.classList.remove('active');
+}
+
+function initTrimEvents(): void {
+  playerTrimToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (trimActive) exitTrimMode();
+    else enterTrimMode();
+  });
+
+  trimCancel.addEventListener('click', (e) => { e.stopPropagation(); exitTrimMode(); });
+
+  // "Set" buttons — capture current playback position
+  trimSetStart.addEventListener('click', (e) => {
+    e.stopPropagation();
+    trimStart = playerVideo.currentTime;
+    trimStartInput.value = playerFmtTime(trimStart);
+    // If start overtook end, push end forward
+    if (trimEnd <= trimStart) {
+      trimEnd = Math.min(trimStart + 1, playerVideo.duration || trimStart + 1);
+      trimEndInput.value = playerFmtTime(trimEnd);
+    }
+    trimUpdateDuration();
+  });
+
+  trimSetEnd.addEventListener('click', (e) => {
+    e.stopPropagation();
+    trimEnd = playerVideo.currentTime;
+    trimEndInput.value = playerFmtTime(trimEnd);
+    // If end fell behind start, pull start back
+    if (trimStart >= trimEnd) {
+      trimStart = Math.max(0, trimEnd - 1);
+      trimStartInput.value = playerFmtTime(trimStart);
+    }
+    trimUpdateDuration();
+  });
+
+  // Manual typing in the inputs
+  const onInputChange = (input: HTMLInputElement, isStart: boolean) => {
+    const t = parseTrimTime(input.value);
+    if (t === null) return;
+    const dur = playerVideo.duration || 0;
+    const clamped = Math.max(0, Math.min(t, dur));
+    if (isStart) {
+      trimStart = clamped;
+      if (trimEnd <= trimStart) {
+        trimEnd = Math.min(trimStart + 1, dur);
+        trimEndInput.value = playerFmtTime(trimEnd);
+      }
+    } else {
+      trimEnd = clamped;
+      if (trimStart >= trimEnd) {
+        trimStart = Math.max(0, trimEnd - 1);
+        trimStartInput.value = playerFmtTime(trimStart);
+      }
+    }
+    playerVideo.currentTime = clamped;
+    trimUpdateDuration();
+  };
+
+  trimStartInput.addEventListener('change', (e) => { e.stopPropagation(); onInputChange(trimStartInput, true); });
+  trimEndInput.addEventListener('change',   (e) => { e.stopPropagation(); onInputChange(trimEndInput, false); });
+  // Stop clicks on inputs from toggling play/pause
+  trimStartInput.addEventListener('click', (e) => e.stopPropagation());
+  trimEndInput.addEventListener('click',   (e) => e.stopPropagation());
+
+  trimSave.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!lastFilePath || trimEnd <= trimStart) return;
+    trimSave.disabled = true;
+    trimSave.innerHTML = '<span class="spinner"></span> Trimming…';
+    playerVideo.pause();
+
+    const result = await window.electronAPI.trimVideo(lastFilePath, trimStart, trimEnd);
+    trimSave.disabled = false;
+    trimSave.innerHTML = '<i class="fa-solid fa-scissors"></i> Save Trim';
+
+    if (result.success && result.filePath) {
+      exitTrimMode();
+      showToast('Trim saved');
+      lastFilePath = result.filePath;
+      const fileUrl = await window.electronAPI.getFileUrl(result.filePath);
+      playerVideo.src = fileUrl;
+      playerVideo.play().catch(() => {});
+    } else {
+      showToast(result.error || 'Trim failed', 'error');
+    }
+  });
+}
+
 // ── Video Player ──────────────────────────────────────────────────────────────
 const playerOverlay   = el('playerOverlay');
 const playerVideo     = el<HTMLVideoElement>('playerVideo');
@@ -598,8 +728,24 @@ const thumbDlProgress = el('thumbDlProgress');
 const thumbDlRingFill = document.getElementById('thumbDlRingFill') as unknown as SVGCircleElement;
 const thumbDlPct      = el('thumbDlPct');
 
+// Trim elements
+const playerTrimToggle  = el<HTMLButtonElement>('playerTrimToggle');
+const playerTrimBar     = el('playerTrimBar');
+const trimStartInput    = el<HTMLInputElement>('trimStartInput');
+const trimEndInput      = el<HTMLInputElement>('trimEndInput');
+const trimSetStart      = el<HTMLButtonElement>('trimSetStart');
+const trimSetEnd        = el<HTMLButtonElement>('trimSetEnd');
+const trimDurationLabel = el('trimDurationLabel');
+const trimCancel        = el<HTMLButtonElement>('trimCancel');
+const trimSave          = el<HTMLButtonElement>('trimSave');
+
 let controlsHideTimer: ReturnType<typeof setTimeout> | null = null;
 let thumbDownloading = false;
+
+// Trim state
+let trimStart = 0;   // seconds
+let trimEnd   = 0;   // seconds
+let trimActive = false;
 
 function playerFmtTime(s: number): string {
   if (!isFinite(s) || s < 0) return '0:00';
@@ -770,6 +916,7 @@ function initPlayerEvents(): void {
 
 
 async function openPlayer(filePath: string, title: string): Promise<void> {
+  lastFilePath = filePath;
   const fileUrl = await window.electronAPI.getFileUrl(filePath);
   playerTitle.textContent = title;
   playerVideo.src = fileUrl;
@@ -782,6 +929,7 @@ function closePlayer(): void {
   playerOverlay.classList.remove('player-overlay--visible');
   playerVideo.pause();
   playerVideo.src = '';
+  exitTrimMode();
 }
 
 // ── Thumb Download & Play ─────────────────────────────────────────────────────
@@ -896,6 +1044,7 @@ async function init(): Promise<void> {
 
   // Player
   initPlayerEvents();
+  initTrimEvents();
 }
 
 document.addEventListener('DOMContentLoaded', init);
